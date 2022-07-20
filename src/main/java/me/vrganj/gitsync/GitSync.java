@@ -76,7 +76,7 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
 
         if (args[0].equalsIgnoreCase("sync")) {
             if (!sender.hasPermission("gitsync.sync")) {
-                sender.sendMessage(PREFIX.append(text("Insufficient permission (gitsync.sync)", RED)));
+                sender.sendMessage(PREFIX.append(text("Insufficient permissions (gitsync.sync)", RED)));
                 return false;
             }
 

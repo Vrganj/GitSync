@@ -9,15 +9,16 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -64,6 +65,30 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
 
         for (String pattern : getConfig().getStringList("blacklist")) {
             blacklist.add(parsePattern(pattern));
+        }
+    }
+
+    private static byte[] getFileHash(File file) {
+        try {
+            byte[] buffer = new byte[1024];
+
+            var digest = MessageDigest.getInstance("MD5");
+
+            try (var stream = new FileInputStream(file)) {
+                int read;
+
+                do {
+                    read = stream.read(buffer);
+
+                    if (read > 0) {
+                        digest.update(buffer, 0, read);
+                    }
+                } while (read != -1);
+            }
+
+            return digest.digest();
+        } catch (NoSuchAlgorithmException | IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -123,19 +148,21 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
 
                         var path = StringUtils.substringAfter(entry.getName(), "/");
 
-                        if (isBlacklisted(path)) {
-                            sender.sendMessage(PREFIX.append(text("Skipping ", GRAY).append(text(path, RED))));
-                        } else if (isWhitelisted(path)) {
-                            sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
+                        if (!isBlacklisted(path) && isWhitelisted(path)) {
                             var file = new File(getDataFolder().getAbsoluteFile().getParentFile(), path);
+                            byte[] oldHash = file.exists() ? getFileHash(file) : null;
 
                             file.getParentFile().mkdirs();
 
                             try (var out = new FileOutputStream(file)) {
                                 stream.transferTo(out);
                             }
-                        } else {
-                            sender.sendMessage(PREFIX.append(text("Ignoring " + path, GRAY)));
+
+                            byte[] newHash = getFileHash(file);
+
+                            if (!Arrays.equals(oldHash, newHash)) {
+                                sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
+                            }
                         }
                     }
 

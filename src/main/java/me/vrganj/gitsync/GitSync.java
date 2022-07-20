@@ -29,7 +29,7 @@ import static net.kyori.adventure.text.Component.text;
 import static net.kyori.adventure.text.format.NamedTextColor.*;
 
 public class GitSync extends JavaPlugin implements CommandExecutor {
-    private static final Component PREFIX = MiniMessage.miniMessage().deserialize("<dark_gray>[<dark_green>GitSync</dark_green>] ");
+    private static final Component PREFIX = text("[", DARK_GRAY).append(text("GitSync", DARK_GREEN)).append(text("] ", DARK_GRAY));
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
     private List<Pattern> whitelist, blacklist;
 
@@ -48,6 +48,13 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        loadConfig();
+
+        Objects.requireNonNull(getCommand("gitsync")).setExecutor(this);
+    }
+
+    private void loadConfig() {
+        reloadConfig();
 
         whitelist = new ArrayList<>();
         blacklist = new ArrayList<>();
@@ -59,77 +66,100 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
         for (String pattern : getConfig().getStringList("blacklist")) {
             blacklist.add(parsePattern(pattern));
         }
-
-        Objects.requireNonNull(getCommand("gitsync")).setExecutor(this);
     }
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-            try {
-                sender.sendMessage(PREFIX.append(text("Fetching repository zipball...", GRAY)));
-                long start = System.currentTimeMillis();
+        if (args.length == 0 || args[0].equalsIgnoreCase("help") || args[0].equals("?")) {
+            sender.sendMessage(PREFIX.append(text("Usage: ", GRAY)).append(text("/gitsync <sync/reload>", GREEN)));
+            return true;
+        }
 
-                var repository = getConfig().getString("repository");
-
-                if (repository == null) {
-                    sender.sendMessage(PREFIX.append(text("Missing repository in config!", RED)));
-                    return;
-                }
-
-                var token = getConfig().getString("token");
-
-                if (token == null) {
-                    sender.sendMessage(PREFIX.append(text("Missing token in config!", RED)));
-                    return;
-                }
-
-                var request = HttpRequest.newBuilder(new URI("https://api.github.com/repos/" + repository + "/zipball/master"))
-                        .header("Accept", "application/vnd.github+json")
-                        .header("Authorization", token)
-                        .GET()
-                        .build();
-
-                var res = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofInputStream());
-
-                if (res.statusCode() >= 400) {
-                    sender.sendMessage(PREFIX.append(text("Failed to fetch. Probably invalid token.", RED)));
-                    return;
-                }
-
-                var stream = new ZipInputStream(res.body());
-
-                ZipEntry entry;
-
-                while ((entry = stream.getNextEntry()) != null) {
-                    if (entry.isDirectory()) {
-                        continue;
-                    }
-
-                    var path = StringUtils.substringAfter(entry.getName(), "/");
-
-                    if (isBlacklisted(path)) {
-                        sender.sendMessage(PREFIX.append(text("Skipping ", GRAY).append(text(path, RED))));
-                    } else if (isWhitelisted(path)) {
-                        sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
-                        var file = new File(getDataFolder().getAbsoluteFile().getParentFile(), path);
-
-                        file.getParentFile().mkdirs();
-
-                        try (var out = new FileOutputStream(file)) {
-                            stream.transferTo(out);
-                        }
-                    } else {
-                        sender.sendMessage(PREFIX.append(text("Ignoring " + path, GRAY)));
-                    }
-                }
-
-                sender.sendMessage(PREFIX.append(text("Finished sync in ", GRAY)).append(text((System.currentTimeMillis() - start) + " ms", GREEN)));
-            } catch (IOException | InterruptedException | URISyntaxException e) {
-                sender.sendMessage(PREFIX.append(text("Something went wrong!", RED)));
-                e.printStackTrace();
+        if (args[0].equalsIgnoreCase("sync")) {
+            if (!sender.hasPermission("gitsync.sync")) {
+                sender.sendMessage(PREFIX.append(text("You're missing gitsync.sync", RED)));
+                return false;
             }
-        });
+
+            Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+                try {
+                    sender.sendMessage(PREFIX.append(text("Fetching repository zipball...", GRAY)));
+                    long start = System.currentTimeMillis();
+
+                    var repository = getConfig().getString("repository");
+
+                    if (repository == null) {
+                        sender.sendMessage(PREFIX.append(text("Missing repository in config!", RED)));
+                        return;
+                    }
+
+                    var token = getConfig().getString("token");
+
+                    if (token == null) {
+                        sender.sendMessage(PREFIX.append(text("Missing token in config!", RED)));
+                        return;
+                    }
+
+                    var request = HttpRequest.newBuilder(new URI("https://api.github.com/repos/" + repository + "/zipball/master"))
+                            .header("Accept", "application/vnd.github+json")
+                            .header("Authorization", token)
+                            .GET()
+                            .build();
+
+                    var res = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofInputStream());
+
+                    if (res.statusCode() >= 400) {
+                        sender.sendMessage(PREFIX.append(text("Failed to fetch. Probably invalid token.", RED)));
+                        return;
+                    }
+
+                    var stream = new ZipInputStream(res.body());
+
+                    ZipEntry entry;
+
+                    while ((entry = stream.getNextEntry()) != null) {
+                        if (entry.isDirectory()) {
+                            continue;
+                        }
+
+                        var path = StringUtils.substringAfter(entry.getName(), "/");
+
+                        if (isBlacklisted(path)) {
+                            sender.sendMessage(PREFIX.append(text("Skipping ", GRAY).append(text(path, RED))));
+                        } else if (isWhitelisted(path)) {
+                            sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
+                            var file = new File(getDataFolder().getAbsoluteFile().getParentFile(), path);
+
+                            file.getParentFile().mkdirs();
+
+                            try (var out = new FileOutputStream(file)) {
+                                stream.transferTo(out);
+                            }
+                        } else {
+                            sender.sendMessage(PREFIX.append(text("Ignoring " + path, GRAY)));
+                        }
+                    }
+
+                    sender.sendMessage(PREFIX.append(text("Finished sync in ", GRAY)).append(text((System.currentTimeMillis() - start) + " ms", GREEN)));
+                } catch (IOException | InterruptedException | URISyntaxException e) {
+                    sender.sendMessage(PREFIX.append(text("Something went wrong!", RED)));
+                    e.printStackTrace();
+                }
+            });
+
+            return true;
+        } else if (args[0].equalsIgnoreCase("reload")) {
+            if (!sender.hasPermission("gitsync.reload")) {
+                sender.sendMessage(PREFIX.append(text("You're missing gitsync.reload", RED)));
+                return false;
+            }
+
+            reloadConfig();
+            loadConfig();
+
+            sender.sendMessage(PREFIX.append(text("Configuration reloaded!", GREEN)));
+            return true;
+        }
 
         return false;
     }

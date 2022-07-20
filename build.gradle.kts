@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "me.vrganj"
-version = "1.0-SNAPSHOT"
+version = "1.1-SNAPSHOT"
 
 repositories {
     maven("https://repo.papermc.io/repository/maven-public/")

@@ -1,0 +1,8 @@
+name: GitSync
+main: me.vrganj.gitsync.GitSync
+version: 1.0
+api-version: 1.18
+
+commands:
+  gitsync:
+    description: Sync the Git repository.

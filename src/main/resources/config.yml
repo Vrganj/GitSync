@@ -1,0 +1,6 @@
+repository: author/repo
+token: token jfjefjafdjksjlfjdkajfkljsdkjflol
+whitelist:
+  - JeffsPlugin/*.yml
+blacklist:
+  - JeffsPlugin/cheese.yml

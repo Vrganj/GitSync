@@ -1,7 +1,6 @@
 package me.vrganj.gitsync;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -77,7 +76,7 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
 
         if (args[0].equalsIgnoreCase("sync")) {
             if (!sender.hasPermission("gitsync.sync")) {
-                sender.sendMessage(PREFIX.append(text("You're missing gitsync.sync", RED)));
+                sender.sendMessage(PREFIX.append(text("Insufficient permission (gitsync.sync)", RED)));
                 return false;
             }
 
@@ -150,7 +149,7 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
             return true;
         } else if (args[0].equalsIgnoreCase("reload")) {
             if (!sender.hasPermission("gitsync.reload")) {
-                sender.sendMessage(PREFIX.append(text("You're missing gitsync.reload", RED)));
+                sender.sendMessage(PREFIX.append(text("Insufficient permissions (gitsync.reload)", RED)));
                 return false;
             }
 

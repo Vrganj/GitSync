@@ -17,10 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -31,7 +28,8 @@ import static net.kyori.adventure.text.format.NamedTextColor.*;
 public class GitSync extends JavaPlugin implements CommandExecutor {
     private static final Component PREFIX = text("[", DARK_GRAY).append(text("GitSync", DARK_GREEN)).append(text("] ", DARK_GRAY));
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
-    private List<Pattern> whitelist, blacklist;
+
+    private volatile Set<Pattern> whitelist, blacklist;
 
     private static Pattern parsePattern(String pattern) {
         return Pattern.compile("^\\Q" + pattern.replace("*", "\\E.*\\Q").replace("?", "\\E.\\Q") + "\\E$");
@@ -56,8 +54,8 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
     private void loadConfig() {
         reloadConfig();
 
-        whitelist = new ArrayList<>();
-        blacklist = new ArrayList<>();
+        Set<Pattern> whitelist = new HashSet<>();
+        Set<Pattern> blacklist = new HashSet<>();
 
         for (String pattern : getConfig().getStringList("whitelist")) {
             whitelist.add(parsePattern(pattern));
@@ -66,6 +64,9 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
         for (String pattern : getConfig().getStringList("blacklist")) {
             blacklist.add(parsePattern(pattern));
         }
+
+        this.whitelist = Collections.unmodifiableSet(whitelist);
+        this.blacklist = Collections.unmodifiableSet(blacklist);
     }
 
     private static byte[] getFileHash(File file) {
@@ -105,27 +106,31 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
                 return false;
             }
 
+            var repository = getConfig().getString("repository");
+
+            if (repository == null) {
+                sender.sendMessage(PREFIX.append(text("Missing repository in config!", RED)));
+                return false;
+            }
+
+            var token = getConfig().getString("token");
+
+            if (token == null) {
+                sender.sendMessage(PREFIX.append(text("Missing token in config!", RED)));
+                return false;
+            }
+
+            // empty :ref defaults to the default branch
+            String ref = args.length >= 2 ? args[1] : "";
+
             Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
                 try {
                     sender.sendMessage(PREFIX.append(text("Fetching repository zipball...", GRAY)));
                     long start = System.currentTimeMillis();
 
-                    var repository = getConfig().getString("repository");
-
-                    if (repository == null) {
-                        sender.sendMessage(PREFIX.append(text("Missing repository in config!", RED)));
-                        return;
-                    }
-
-                    var token = getConfig().getString("token");
-
-                    if (token == null) {
-                        sender.sendMessage(PREFIX.append(text("Missing token in config!", RED)));
-                        return;
-                    }
-
-                    var request = HttpRequest.newBuilder(new URI("https://api.github.com/repos/" + repository + "/zipball/master"))
+                    var request = HttpRequest.newBuilder(new URI("https://api.github.com/repos/" + repository + "/zipball/" + ref))
                             .header("Accept", "application/vnd.github+json")
+                            .header("X-GitHub-Api-Version", "2026-03-10")
                             .header("Authorization", token)
                             .GET()
                             .build();
@@ -137,31 +142,32 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
                         return;
                     }
 
-                    var stream = new ZipInputStream(res.body());
+                    try (var stream = new ZipInputStream(res.body())) {
 
-                    ZipEntry entry;
+                        ZipEntry entry;
 
-                    while ((entry = stream.getNextEntry()) != null) {
-                        if (entry.isDirectory()) {
-                            continue;
-                        }
-
-                        var path = StringUtils.substringAfter(entry.getName(), "/");
-
-                        if (!isBlacklisted(path) && isWhitelisted(path)) {
-                            var file = new File(getDataFolder().getAbsoluteFile().getParentFile(), path);
-                            byte[] oldHash = file.exists() ? getFileHash(file) : null;
-
-                            file.getParentFile().mkdirs();
-
-                            try (var out = new FileOutputStream(file)) {
-                                stream.transferTo(out);
+                        while ((entry = stream.getNextEntry()) != null) {
+                            if (entry.isDirectory()) {
+                                continue;
                             }
 
-                            byte[] newHash = getFileHash(file);
+                            var path = StringUtils.substringAfter(entry.getName(), "/");
 
-                            if (!Arrays.equals(oldHash, newHash)) {
-                                sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
+                            if (!isBlacklisted(path) && isWhitelisted(path)) {
+                                var file = new File(getDataFolder().getAbsoluteFile().getParentFile(), path);
+                                byte[] oldHash = file.exists() ? getFileHash(file) : null;
+
+                                file.getParentFile().mkdirs();
+
+                                try (var out = new FileOutputStream(file)) {
+                                    stream.transferTo(out);
+                                }
+
+                                byte[] newHash = getFileHash(file);
+
+                                if (!Arrays.equals(oldHash, newHash)) {
+                                    sender.sendMessage(PREFIX.append(text("Overwriting ", GRAY).append(text(path, GREEN))));
+                                }
                             }
                         }
                     }
@@ -180,7 +186,6 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
                 return false;
             }
 
-            reloadConfig();
             loadConfig();
 
             sender.sendMessage(PREFIX.append(text("Configuration reloaded!", GREEN)));

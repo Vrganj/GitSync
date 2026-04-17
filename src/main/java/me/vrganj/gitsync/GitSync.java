@@ -12,9 +12,11 @@ import org.jetbrains.annotations.NotNull;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -121,7 +123,7 @@ public class GitSync extends JavaPlugin implements CommandExecutor {
             }
 
             // empty :ref defaults to the default branch
-            String ref = args.length >= 2 ? args[1] : "";
+            String ref = args.length >= 2 ? URLEncoder.encode(args[1], StandardCharsets.UTF_8) : "";
 
             Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
                 try {
